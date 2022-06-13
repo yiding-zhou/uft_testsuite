@@ -1,0 +1,125 @@
+pids=(-1)
+starttime=`date`
+
+py3dev=python3-dev
+cpp=
+kernel_header=linux-headers-`uname -r`
+pkg_install_cmds=(apt-get yum)
+install_cmd=
+
+for cmd in ${pkg_install_cmds[@]}
+do
+    ${cmd} --help > /dev/null 2>&1
+    ret=$?
+    if [ ${ret} -eq 0 ]
+    then
+        install_cmd=${cmd}
+        break
+    fi
+done
+
+if [ -z "${install_cmd}" ]
+then
+    echo "can not determine install command"
+    exit -1
+fi
+
+echo "install command : ${install_cmd}"
+echo "set enable-bracketed-paste off" > ~/.inputrc
+
+if [ ${install_cmd} = "yum" ]
+then
+    ## centos
+    service docker start
+    py3dev=python3-devel
+    cpp=gcc-c++
+    kernel_header=kernel-devel
+fi
+
+####${install_cmd} -y update
+${install_cmd} -y install git libtool make python3 gcc docker.io docker ${kernel_header} ${cpp} ${py3dev}
+
+python3 -m pip install --upgrade --force pip
+pip3 install meson==0.57.1 ninja
+pip3 install cython pexpect
+pip3 install grpcio-tools grpcio-reflection pyyaml pyelftools
+
+mkdir -p ${testdir}/${uft_dir}
+cd ${testdir}
+
+mkdir -p build_log
+mkdir -p ${run_log}
+
+logdir=${testdir}/build_log
+
+rm -rf ${uft_base}/uft_testsuite
+
+for ver in ${versions[@]}
+do
+    cp -rf ${uft_base} ${uft_dir}/${ver}
+done
+
+cd ${testdir}/${uft_base}
+
+i=0
+
+for ver in ${versions[@]}
+do
+    echo "build docker image for ${ver}"
+    make DCF_NAME=${dcf_name} DPDK_TAG=${ver} > ${logdir}/docker_${ver}.log 2>&1 &
+    pids[$i]=$!
+    ((i++));
+done
+
+for pid in ${pids[@]}
+do
+    echo "pid = ${pid}"
+done
+
+## build DPDK
+
+cd ${testdir}
+git clone http://dpdk.org/git/dpdk DPDK
+
+cd ${testdir}/DPDK
+
+disable_drivers="event,net/tap,net/af_packet,net/atlantic,net/bnx2x,net/cxgbe,\
+net/dpaa2, net/enetc,net/fm10k,net/i40e,net/ixgbe,net/igc,net/memif,net/mlx5,net/netvsc,\
+net/null, net/pcap,net/ring,net/vdev_netvsc,net/vmxnet3,net/af_xdp,net/avp,net/bnxt,\
+net/dcf_grpc, net/e1000,net/enic,net/hinic,net/ionic,net/kni,net/mvneta,net/nfp,net/nfb,\
+net/octeontx,net/pfe,net/sfc,net/tap,net/vhost,net/ark,net/axgbe,net/bondong,net/dpaa,\
+net/ena,net/failsafe, net/hns3,net/ipn3ke,net/liquidio,net/mlx4,net/mvpp2,net/octeontx2,\
+net/qede,net/softnic,net/thunderx,net/virtio"
+
+
+for ver in ${versions[@]}
+do
+    cd ${testdir}/DPDK
+    echo "build dpdklib ${ver}"
+
+    git checkout ${ver}
+    dpdk_install_path=${testdir}/libdpdk-${ver}
+    rm -rf dpdk-build
+    meson dpdk-build --prefix=${dpdk_install_path} --libdir=${dpdk_lib_dir}  -Ddisable_drivers="${disable_drivers}" -Ddefault_library=shared > ${logdir}/dpdk_meson_${ver}.log 2>&1
+
+    ninja -C dpdk-build install > ${logdir}/dpdk_ninja_${ver}.log 2>&1
+
+    uft_install_path=${testdir}/${uft_dir}/${ver}
+    echo "build cython lib ${ver}"
+    cd ${uft_install_path}/lib
+    python3 setup.py build_ext -i --dpdkinc=${dpdk_install_path}/include --dpdklib=${dpdk_install_path}/${dpdk_lib_dir} --dpdkver=${ver}
+
+    echo "build grpc proto ${ver}"
+    cd ${uft_install_path}/rpc
+    python3 -m grpc_tools.protoc -I./ --python_out=. --grpc_python_out=. flow.proto
+    python3 -m grpc_tools.protoc -I./ --python_out=. --grpc_python_out=. qos.proto
+done
+
+echo "waiting ${pid} docker built done..."
+for pid in ${pids[@]}
+do
+    wait ${pid}
+done
+
+now=`date`
+echo "start at ${starttime} end at ${now}"

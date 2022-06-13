@@ -1,0 +1,183 @@
+import sys
+sys.path.append('core')
+sys.path.append('cases')
+import config
+import inspect
+import os
+import core
+import atexit
+
+cases = []
+global_config = None
+versions = None
+
+allow_list = []
+
+def handler_on_exit():
+    core.stop_uft()
+
+class test_case:
+    def __init__(self, name, func, disable_docker=False, priority=0):
+        self.name = os.path.basename(name)
+        self.func = func
+        self.disable_docker = disable_docker
+        self.priority = priority
+        self.result_host = {}
+        self.result_docker = {}
+
+
+def get_case(mod):
+    # get all functions from module
+    func_all = inspect.getmembers(mod, inspect.isfunction)
+
+    cases = [c[1] for c in func_all if c[1].__code__.co_argcount == 0]
+    if len(cases) != 1:
+        print("please implement function 'run()' that take 0 param in %s" %
+              mod.__file__)
+        raise Exception("Implement function error in %s" % mod.__file__)
+
+    disable_docker = hasattr(mod, "disable_docker")
+    priority = 0
+    if hasattr(mod, "priority"):
+        prio = getattr(mod, "priority")
+        if isinstance(prio, int):
+            priority = prio
+
+    return test_case(mod.__file__[:-3], cases[0], disable_docker, priority)
+
+
+def load_cases():
+    global cases
+    for filename in os.listdir("cases"):
+        if filename[0] in (".", "_") or not filename.endswith(".py"):
+            continue
+
+        if allow_list and filename[:-3] not in allow_list:
+            continue
+        try:
+            mod = __import__(filename[:-3])
+            cases.append(get_case(mod))
+        except Exception as e:
+            print(e)
+    cases.sort(key=lambda x: x.priority)
+    return cases
+
+
+def run_cases_host(cases, ver):
+    for c in cases:
+        print(ver, "Run host case : ", c.name)
+        try:
+            c.result_host[ver] = c.func()
+        except Exception as e:
+            print(e)
+            c.result_host[ver] = False
+
+        if not c.result_host[ver]:
+            print(">>>case : %s failed in host" % c.name)
+
+
+def run_cases_docker(cases, ver):
+    for c in cases:
+        if not c.disable_docker:
+            print(ver, "Run docker case : ", c.name)
+            try:
+                c.result_docker[ver] = c.func()
+            except Exception as e:
+                print(e)
+                c.result_docker[ver] = False
+
+            if not c.result_docker[ver]:
+                print(">>>case : %s failed in docker" % c.name)
+        else:
+            c.result_docker[ver] = "N/A"
+
+
+def generate_report(cases):
+    name_fmt = "{:%d}"
+    col_fmt = "|{:%d}"
+
+    col0_width = 0
+    ver_width = 0
+    for c in cases:
+        if col0_width < len(c.name):
+            col0_width = len(c.name)
+
+    name_fmt = name_fmt % col0_width
+
+    for ver in versions:
+        if ver_width < len(ver):
+            ver_width = len(ver)
+    col_fmt = col_fmt % ver_width
+    env_width = len(versions) * (1 + ver_width) - 1
+    env_fmt = "|{:%d}" % env_width
+    line_len = (1 + ver_width) * 2 * len(versions) + col0_width
+    line_env = name_fmt.format("") + env_fmt.format("host")
+    line_env += env_fmt.format("docker") + "\n"
+
+    line_ver = name_fmt.format("name")
+
+    for ver in versions:
+        line_ver += col_fmt.format(ver)
+    for ver in versions:
+        line_ver += col_fmt.format(ver)
+
+    line_sep = ""
+    for _ in range(0, line_len):
+        line_sep += "-"
+    line_sep += "\n"
+
+    report = line_sep + line_env + line_sep
+    report += line_ver + "\n" + line_sep
+
+    for c in cases:
+        report += name_fmt.format(c.name)
+        for ver in versions:
+            if c.result_host[ver] == True:
+                report += col_fmt.format("pass")
+            elif c.result_host[ver] == False:
+                report += col_fmt.format("fail")
+
+        for ver in versions:
+            if c.result_docker[ver] == True:
+                report += col_fmt.format("pass")
+            elif c.result_docker[ver] == False:
+                report += col_fmt.format("fail")
+            else:
+                report += col_fmt.format("N/A")
+        report += "\n" + line_sep
+    print("Test result:")
+    print(report)
+
+
+def run_cases(cases):
+    for ver in versions:
+        core.restart_uft(ver=ver, logfile="host_run_" + ver + ".log")
+        run_cases_host(cases, ver)
+
+        core.restart_uft(ver=ver, docker=True,
+                         logfile="docker_run_" + ver + ".log")
+        run_cases_docker(cases, ver)
+
+
+if __name__ == "__main__":
+    cfg = config.init_config()
+    versions = cfg.get("versions", ["v21.08", "v21.11", "v22.03"])
+    allow_list = cfg.get("allow_list", [])
+    if not isinstance(allow_list, list):
+        allow_list = []
+
+    versions.sort()
+    cfg["versions"] = versions
+    global_config = cfg
+
+    atexit.register(handler_on_exit)
+    core.init_dut(cfg)
+
+    cases = load_cases()
+    try:
+        run_cases(cases)
+    except Exception as e:
+        print(e)
+
+    core.stop_uft()
+    generate_report(cases)

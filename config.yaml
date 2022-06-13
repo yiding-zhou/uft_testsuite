@@ -1,0 +1,24 @@
+versions: ["v21.11", "v21.08"]
+pcis: 
+  - pci : "0000:31:01.0"
+    mode : dcf
+  - pci : "0000:31:11.0"
+    mode : dcf
+
+ssh :
+  host : "localhost"
+  user : "root"
+  passwd : "tester"
+
+grpc :
+  host : "localhost"
+  auth : 
+    server_key : "/root/.ssh/uft/ca/server.key"
+    server_cert : "/root/.ssh/uft/ca/server.crt"
+    client_cert : "/root/.ssh/uft/ca/ca.crt"
+
+remote_testdir : "/root/uft_testdir"
+image_prefix : "uft_test"
+allow_list : []
+rebuild : True
+
