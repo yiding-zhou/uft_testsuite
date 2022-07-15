@@ -23,7 +23,7 @@ def check_config_ssh(ssh):
 
 def check_config_grpc(grpc):
     if not (grpc and isinstance(grpc, dict)):
-        print("You must specify grpc as a dictinary")
+        print("You must specify grpc as a dictionary")
         return False
 
     host = grpc.get("host", None)
@@ -110,7 +110,11 @@ def check_config_pcis(pcis):
         if mode not in ("dcf", "kernel"):
             print("You must specify pci's mode as 'dcf' or 'kernel'")
             return False
-
+        intf = pci.get("intf", None)
+        if not (intf and isinstance(intf, str)):
+            print("You must specify Interface name")
+            return False
+        
     if len(pcis) != len(set(pci_addrs)):
         print("Can not specify the same pci address")
         return False

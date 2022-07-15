@@ -33,7 +33,7 @@ class rule_context:
         if method in ('create','validate'):
             patterns = [self.parser.parse(p) for p in cmd.patterns if p]
             actions  = [self.parser.parse(a) for a in cmd.actions if a]
-            resp = func(cmd.port_id,patterns, actions)
+            resp = func(cmd.port_id, patterns, actions)
 
         elif method in ('flush','list'):
             resp = func(cmd.port_id)
@@ -43,7 +43,7 @@ class rule_context:
         
         elif method == 'listports':
             resp = func()
-    
+
         return resp
 
 def reset_rule_context(cfg, use_cert=False):
@@ -54,7 +54,7 @@ def reset_rule_context(cfg, use_cert=False):
         cert = os.path.dirname(os.path.abspath(__file__)) + "/ca.crt"
     rule_ctx = rule_context(host + ":50051", cert)
 
-def execute_rule(s):
+def _execute_rule(s):
     if not isinstance(s, str):
         return False
     print(s)
@@ -68,6 +68,7 @@ def error_from_resp(resp):
 def ruleno_from_resp(resp):
     if error_from_resp(resp):
         return -1
+
     return rule_ctx.builder.ruleno_from_response(resp)
 
 ## return ports list as format [(port_id, pci, mode)]
@@ -82,5 +83,5 @@ def rules_from_resp(resp):
         return []
     return rule_ctx.builder.rules_from_response(resp)
 
-__all__ = ["execute_rule",
-         "error_from_resp", "ruleno_from_resp", "ports_from_resp", "rules_from_resp"]
+__all__ = ["error_from_resp", "ruleno_from_resp", "ports_from_resp", "rules_from_resp",
+"_execute_rule"]

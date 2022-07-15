@@ -2,7 +2,7 @@ import core
 
 cmd0 = "flow create %d ingress pattern eth / ipv4 / udp src is 68 dst is 67 / end actions vf id 1 / end"
 cmd1 = "flow create %d ingress pattern eth / ipv4 / udp dst spec 8010 dst mask 65520 / end actions drop / end"
-cmd2 = "flow create %d ingress pattern eth / vlan tci is 1 / vlan tci is 2 / end actions vf id 3 / end"
+cmd2 = "flow create %d ingress pattern eth / ipv4 src spec 192.168.1.1 src mask 255.255.255.0 / end actions drop / end"
 cmd3 = "flow create %d ingress pattern eth / ipv4 proto is 0x02 / end actions vf id 1 / end"
 
 

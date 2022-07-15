@@ -71,6 +71,7 @@ class dut_context:
         dirs = self.cwd.split("/")
         self.local_uft_dir = "/".join(dirs[:-2])
         self.local_uft_name = dirs[-3]
+        self.current_run_log = ""
 
     def _clean_uft(self, clean_files=False):
         print("=============== stop building docker images ===============")
@@ -102,11 +103,12 @@ class dut_context:
         print("=============== clean test dir==========================")
         self._excute_cmd("rm -rf " + self.remote_testdir)
 
-    def _excute_cmd(self, cmd, timeout=30):
+    def _excute_cmd(self, cmd, timeout=30, echo=True):
         ssh = pxssh.pxssh(encoding="utf-8")
         ssh.login(self.ssh_host, self.ssh_user, self.ssh_passwd,
                   port=self.ssh_port, original_prompt="[$#>]")
-        print(cmd)
+        if echo:
+            print(cmd)
         ssh.sendline(cmd)
         ssh.PROMPT = "#"
         ssh.prompt(timeout)
@@ -130,7 +132,6 @@ class dut_context:
             command = "scp -r -v -P {0} -o NoHostAuthenticationForLocalhost=yes {1}@{2}:{3} {4}".format(
                 str(self.ssh_port), self.ssh_user, self.ssh_host, src, dst
             )
-
         self._spawn_scp(command)
 
     def _upload(self, src, dst):
@@ -228,7 +229,7 @@ class dut_context:
         self._excute_cmd("cd %s && mv %s %s 2>/dev/null" %
                          (self.remote_testdir, self.local_uft_name, remote_uft_base))
         self._excute_cmd("cd " + self.remote_testdir +
-                         " && chmod +x build.sh && ./build.sh >> build.log 2>&1 &")
+                         " && chmod +x build.sh && ./build.sh > build.log 2>&1 &")
 
         self.tid_check = Thread(target=_build_uft_check, args=(self,))
         self.tid_check.start()
@@ -258,7 +259,8 @@ class dut_context:
         cmd = ""
         if docker:
             cmd += "docker run -v /dev/hugepages:/dev/hugepages "
-            cmd += "-v /usr/lib/firmware:/usr/lib/firmware:rw "
+            # use /lib/firmware instead of /usr/lib/firmware on alpine
+            cmd += "-v /lib/firmware:/lib/firmware:rw "
 
             for i, pci in enumerate(self.pcis):
                 cmd += "-e PCIDEVICE_INTEL_COM_INTEL_ENS801F%d=%s " % (
@@ -294,10 +296,11 @@ class dut_context:
         if count == 0:
             print("start uft timeout ......")
             return False
-        else:
-            self.docker = docker
-            self.current_version = self.versions.index(ver)
-            return True
+        
+        self.docker = docker
+        self.current_version = self.versions.index(ver)
+        self.current_run_log = logfile
+        return True
 
     def _stop_uft_docker(self):
         print("=============== stop UFT in docker ===============")
@@ -341,6 +344,16 @@ class dut_context:
         else:
             return self._stop_uft_host()
 
+    def _insert_log_tag(self, tag, n):
+        if not n or not isinstance(n, int):
+            n = 0
+        prefix = "===="
+        while n > 0:
+            prefix = prefix + "===="
+            n -= 1
+
+        cmd = 'echo "%s%s" >> %s' % (prefix, tag, self.current_run_log)
+        self._excute_cmd(cmd, echo=False)
 
 def init_dut(cfg):
     global dut
@@ -365,7 +378,17 @@ def ports_configured():
 def stop_uft():
     return dut._stop_uft()
 
+def insert_log_tag(tag, n=None):
+    dut._insert_log_tag(tag, n)
+
+def execute_rule(r):
+    insert_log_tag(r, 1)
+    return rule._execute_rule(r)
+
+def execute_command(cmd):
+    dut._excute_cmd(cmd)
 
 dut = None
 
-__all__ = ["init_dut", "restart_uft", "ports_configured", "stop_uft"]
+__all__ = ["init_dut", "restart_uft", "ports_configured", "stop_uft", "insert_log_tag",
+"execute_rule", "execute_command"]

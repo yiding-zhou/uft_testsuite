@@ -67,7 +67,9 @@ def run_cases_host(cases, ver):
     for c in cases:
         print(ver, "Run host case : ", c.name)
         try:
+            core.insert_log_tag("Case : " + c.name + " Start")
             c.result_host[ver] = c.func()
+            core.insert_log_tag("Case : " + c.name + " End")
         except Exception as e:
             print(e)
             c.result_host[ver] = False
@@ -81,7 +83,9 @@ def run_cases_docker(cases, ver):
         if not c.disable_docker:
             print(ver, "Run docker case : ", c.name)
             try:
+                core.insert_log_tag("Case : " + c.name, " Start")
                 c.result_docker[ver] = c.func()
+                core.insert_log_tag("Case : " + c.name, " End")
             except Exception as e:
                 print(e)
                 c.result_docker[ver] = False
