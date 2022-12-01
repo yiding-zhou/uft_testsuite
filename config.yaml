@@ -1,9 +1,12 @@
-versions: ["v21.11", "v21.08"]
+#versions: ["v22.07", "v21.08", "v21.11", "v22.03"]
+versions: ["v22.07"]
 pcis: 
   - pci : "0000:31:01.0"
     mode : dcf
+    intf : "ens5f0"
   - pci : "0000:31:11.0"
     mode : dcf
+    intf : "ens5f1"
 
 ssh :
   host : "localhost"
@@ -13,12 +16,12 @@ ssh :
 grpc :
   host : "localhost"
   auth : 
-    server_key : "/root/.ssh/uft/ca/server.key"
-    server_cert : "/root/.ssh/uft/ca/server.crt"
-    client_cert : "/root/.ssh/uft/ca/ca.crt"
+    server_key : "/home/yiding/uft/ca/localhost/server.key"
+    server_cert : "/home/yiding/uft/ca/localhost/server.crt"
+    client_cert : "/home/yiding/uft/ca/localhost/ca.crt"
 
 remote_testdir : "/root/uft_testdir"
 image_prefix : "uft_test"
 allow_list : []
-rebuild : True
+rebuild : False
 

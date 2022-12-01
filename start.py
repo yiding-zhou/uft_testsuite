@@ -17,14 +17,14 @@ def handler_on_exit():
     core.stop_uft()
 
 class test_case:
-    def __init__(self, name, func, disable_docker=False, priority=0):
+    def __init__(self, name, func, disable_docker=False, priority=0, need_restart=False):
         self.name = os.path.basename(name)
         self.func = func
         self.disable_docker = disable_docker
         self.priority = priority
+        self.need_restart = need_restart
         self.result_host = {}
         self.result_docker = {}
-
 
 def get_case(mod):
     # get all functions from module
@@ -43,7 +43,17 @@ def get_case(mod):
         if isinstance(prio, int):
             priority = prio
 
-    return test_case(mod.__file__[:-3], cases[0], disable_docker, priority)
+    need_restart = False
+    if hasattr(mod, "need_restart"):
+        restart = getattr(mod, "need_restart")
+        if isinstance(restart, bool):
+            need_restart = restart
+
+    return test_case(mod.__file__[:-3],
+                    cases[0],
+                    disable_docker=disable_docker,
+                    priority=priority,
+                    need_restart=need_restart)
 
 
 def load_cases():
@@ -65,11 +75,13 @@ def load_cases():
 
 def run_cases_host(cases, ver):
     for c in cases:
-        print(ver, "Run host case : ", c.name)
+        print(ver, "Run Host Case : ", c.name)
         try:
-            core.insert_log_tag("Case : " + c.name + " Start")
+            core.insert_log_tag("Test Case : " + c.name + " Start")
             c.result_host[ver] = c.func()
-            core.insert_log_tag("Case : " + c.name + " End")
+            core.insert_log_tag("Test Case : " + c.name + " End")
+            if c.need_restart:
+                core.restart_uft()
         except Exception as e:
             print(e)
             c.result_host[ver] = False
@@ -81,11 +93,13 @@ def run_cases_host(cases, ver):
 def run_cases_docker(cases, ver):
     for c in cases:
         if not c.disable_docker:
-            print(ver, "Run docker case : ", c.name)
+            print(ver, "Run Docker Case : ", c.name)
             try:
-                core.insert_log_tag("Case : " + c.name, " Start")
+                core.insert_log_tag("Test Case : " + c.name + " Start")
                 c.result_docker[ver] = c.func()
-                core.insert_log_tag("Case : " + c.name, " End")
+                core.insert_log_tag("Test Case : " + c.name + " End")
+                if c.need_restart:
+                    core.restart_uft()
             except Exception as e:
                 print(e)
                 c.result_docker[ver] = False

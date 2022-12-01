@@ -7,12 +7,17 @@ cmd3 = "flow create 0 ingress pattern eth / ipv4 dst spec 192.168.0.1 dst mask 2
 
 def run():
     core.execute_rule("flow flush 0")
+    core.insert_log_tag("Step 1: add 4 rules", 1)
     core.execute_rule(cmd0)
     core.execute_rule(cmd1)
     core.execute_rule(cmd2)
     core.execute_rule(cmd3)
+    core.insert_log_tag("Step 2: delete one rule in middle", 1)
     core.execute_rule("flow destroy 0 rule 2")
+
+    core.insert_log_tag("Step 3: flush all the rules", 1)
     core.execute_rule("flow flush 0")
+    core.insert_log_tag("Step 4: check the rules can all be deleted", 1)
     resp = core.execute_rule("flow list 0")
     if 0 != len(core.rules_from_resp(resp)):
         return False

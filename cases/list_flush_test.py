@@ -17,14 +17,9 @@ def run():
         return False
 
     ## test 'flush' and 'list'
-    for port_id, _ in enumerate(ports_info):
-        cmd = "flow flush " + str(port_id)
-        if core.error_from_resp(core.execute_rule(cmd)):
-            return False
-
-        cmd = "flow list " + str(port_id)
-        resp = core.execute_rule(cmd)
-        if len(core.rules_from_resp(resp)) != 0:
-            return False
+   
+    cmd = "flow flush 0"
+    if core.error_from_resp(core.execute_rule(cmd)):
+        return False
 
     return True

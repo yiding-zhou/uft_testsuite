@@ -250,23 +250,23 @@ class dut_context:
             return False
 
         if logfile is None:
-            if docker:
-                logfile = "uft_in_docker.log"
-            else:
-                logfile = "uft_in_host.log"
-
+            logfile = self.current_run_log
+        
+        self.current_run_log = logfile
+        
         self._stop_uft()
+        logfile = "%s/%s/%s" % (self.remote_testdir, remote_run_log, logfile)
+
         cmd = ""
         if docker:
             cmd += "docker run -v /dev/hugepages:/dev/hugepages "
-            # use /lib/firmware instead of /usr/lib/firmware on alpine
             cmd += "-v /lib/firmware:/lib/firmware:rw "
-
             for i, pci in enumerate(self.pcis):
                 cmd += "-e PCIDEVICE_INTEL_COM_INTEL_ENS801F%d=%s " % (
                     i, pci["pci"])
 
             cmd += "--net=host --cap-add IPC_LOCK --cap-add SYS_NICE "
+
             cmd += "--device /dev/vfio:/dev/vfio " + self.image_prefix + ":" + ver
         else:
             conf = self.remote_testdir + "/" + conf_prefix + "." + ver
@@ -278,8 +278,7 @@ class dut_context:
             cmd += " && export LD_LIBRARY_PATH="
             cmd += "%s/libdpdk-%s/%s" % (self.remote_testdir, ver, remote_dpdk_dir)
             cmd += " && python3 -u %s/server.py " % uft_dir
-
-        logfile = "%s/%s/%s" % (self.remote_testdir, remote_run_log, logfile)
+            
         cmd += " >> " + logfile + " 2>&1 &"
         print("=============== start UFT ==========================")
         self._excute_cmd(cmd)
@@ -299,7 +298,7 @@ class dut_context:
         
         self.docker = docker
         self.current_version = self.versions.index(ver)
-        self.current_run_log = logfile
+       
         return True
 
     def _stop_uft_docker(self):
@@ -352,7 +351,8 @@ class dut_context:
             prefix = prefix + "===="
             n -= 1
 
-        cmd = 'echo "%s%s" >> %s' % (prefix, tag, self.current_run_log)
+        cmd = 'echo "%s%s" >> %s/%s/%s' % (prefix, tag,
+                        self.remote_testdir, remote_run_log, self.current_run_log)
         self._excute_cmd(cmd, echo=False)
 
 def init_dut(cfg):
