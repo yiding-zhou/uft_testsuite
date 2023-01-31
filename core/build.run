@@ -40,8 +40,8 @@ fi
 ${install_cmd} -y install git libtool make python3 gcc docker.io docker ${kernel_header} ${cpp} ${py3dev}
 
 python3 -m pip install --upgrade --force pip
-pip3 install meson==0.57.1 ninja
-pip3 install cython pexpect
+pip3 install meson
+pip3 install cython pexpect ninja
 pip3 install grpcio-tools grpcio-reflection pyyaml pyelftools
 
 mkdir -p ${testdir}/${uft_dir}
@@ -66,7 +66,7 @@ i=0
 for ver in ${versions[@]}
 do
     echo "build docker image for ${ver}"
-    make DCF_NAME=${dcf_name} DPDK_TAG=${ver} > ${logdir}/docker_${ver}.log 2>&1 &
+    make DCF_NAME=${dcf_name} DPDK_TAG=${ver}  > ${logdir}/docker_${ver}.log 2>&1 &
     pids[$i]=$!
     ((i++));
 done
@@ -100,19 +100,32 @@ do
     git checkout ${ver}
     dpdk_install_path=${testdir}/libdpdk-${ver}
     rm -rf dpdk-build
+    if [ "X$ver" = "Xv21.08" ]
+    then
+        pip3 install meson==0.57.1
+    fi
     meson dpdk-build --prefix=${dpdk_install_path} --libdir=${dpdk_lib_dir}  -Ddisable_drivers="${disable_drivers}" -Ddefault_library=shared > ${logdir}/dpdk_meson_${ver}.log 2>&1
 
     ninja -C dpdk-build install > ${logdir}/dpdk_ninja_${ver}.log 2>&1
 
+    pip3 install meson --upgrade
     uft_install_path=${testdir}/${uft_dir}/${ver}
-    echo "build cython lib ${ver}"
-    cd ${uft_install_path}/lib
-    python3 setup.py build_ext -i --dpdkinc=${dpdk_install_path}/include --dpdklib=${dpdk_install_path}/${dpdk_lib_dir} --dpdkver=${ver}
+    echo "build cython lib & grpc proto ${ver}"
+#    cd ${uft_install_path}/lib
+#    python3 setup.py build_ext -i --dpdkinc=${dpdk_install_path}/include --dpdklib=${dpdk_install_path}/${dpdk_lib_dir} --dpdkver=${ver}
 
-    echo "build grpc proto ${ver}"
-    cd ${uft_install_path}/rpc
-    python3 -m grpc_tools.protoc -I./ --python_out=. --grpc_python_out=. flow.proto
-    python3 -m grpc_tools.protoc -I./ --python_out=. --grpc_python_out=. qos.proto
+#    echo "build grpc proto ${ver}"
+#    cd ${uft_install_path}/rpc
+#    python3 -m grpc_tools.protoc -I./ --python_out=. --grpc_python_out=. flow.proto
+#    python3 -m grpc_tools.protoc -I./ --python_out=. --grpc_python_out=. qos.proto
+    cd ${uft_install_path}
+    ## modify meson_options.txt
+    rm -rf build lib/build rpc/build rpc/*.py lib/*.c lib/*.so
+    rm -f meson_options.txt
+	echo "option('lib_ver', type:'string',value:'${ver}', description:'the version of dpdk')" >> meson_options.txt
+	echo "option('inc_dirs', type:'string',value:'${dpdk_install_path}/include', description:'the library path of dpdk')" >> meson_options.txt
+	echo "option('lib_dirs', type:'string',value:'${dpdk_install_path}/${dpdk_lib_dir}', description:'the include path of dpdk')" >>  meson_options.txt
+    meson build
 done
 
 echo "waiting ${pid} docker built done..."

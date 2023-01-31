@@ -4,8 +4,8 @@ sys.path.append('cases')
 import config
 import inspect
 import os
-import core
 import atexit
+import core
 
 cases = []
 global_config = None
@@ -30,7 +30,7 @@ def get_case(mod):
     # get all functions from module
     func_all = inspect.getmembers(mod, inspect.isfunction)
 
-    cases = [c[1] for c in func_all if c[1].__code__.co_argcount == 0]
+    cases = [c[1] for c in func_all if c[1].__code__.co_argcount == 1]
     if len(cases) != 1:
         print("please implement function 'run()' that take 0 param in %s" %
               mod.__file__)
@@ -74,11 +74,12 @@ def load_cases():
 
 
 def run_cases_host(cases, ver):
+    print("Run Test Cases on Host")
     for c in cases:
-        print(ver, "Run Host Case : ", c.name)
+        print(ver, "Run Host Case : %s" % c.name)
         try:
             core.insert_log_tag("Test Case : " + c.name + " Start")
-            c.result_host[ver] = c.func()
+            c.result_host[ver] = c.func(ver)
             core.insert_log_tag("Test Case : " + c.name + " End")
             if c.need_restart:
                 core.restart_uft()
@@ -88,15 +89,16 @@ def run_cases_host(cases, ver):
 
         if not c.result_host[ver]:
             print(">>>case : %s failed in host" % c.name)
-
+    print("Run Test Cases on Host Done")
 
 def run_cases_docker(cases, ver):
+    print("Run Test Cases on Docker")
     for c in cases:
         if not c.disable_docker:
-            print(ver, "Run Docker Case : ", c.name)
+            print(ver, "Run Docker Case : %s" % c.name)
             try:
                 core.insert_log_tag("Test Case : " + c.name + " Start")
-                c.result_docker[ver] = c.func()
+                c.result_docker[ver] = c.func(ver)
                 core.insert_log_tag("Test Case : " + c.name + " End")
                 if c.need_restart:
                     core.restart_uft()
@@ -107,6 +109,7 @@ def run_cases_docker(cases, ver):
             if not c.result_docker[ver]:
                 print(">>>case : %s failed in docker" % c.name)
         else:
+            print(ver, "Case : %s disable on docke" % c.name)
             c.result_docker[ver] = "N/A"
 
 
@@ -150,36 +153,48 @@ def generate_report(cases):
     for c in cases:
         report += name_fmt.format(c.name)
         for ver in versions:
-            if c.result_host[ver] == True:
-                report += col_fmt.format("pass")
-            elif c.result_host[ver] == False:
-                report += col_fmt.format("fail")
-
+            try:
+                if c.result_host[ver] == True:
+                    report += col_fmt.format("pass")
+                elif c.result_host[ver] == False:
+                    report += col_fmt.format("fail")
+            except Exception as e:
+                report += col_fmt.format("N/A")
         for ver in versions:
-            if c.result_docker[ver] == True:
-                report += col_fmt.format("pass")
-            elif c.result_docker[ver] == False:
-                report += col_fmt.format("fail")
-            else:
+            try:
+                if c.result_docker[ver] == True:
+                    report += col_fmt.format("pass")
+                elif c.result_docker[ver] == False:
+                    report += col_fmt.format("fail")
+                else:
+                    report += col_fmt.format("N/A")
+            except Exception as e:
                 report += col_fmt.format("N/A")
         report += "\n" + line_sep
     print("Test result:")
     print(report)
 
+#def switch_version(ver):
+#    os.system("cp -f rpc_files/" + ver + "/* .")
+#    core.flow_reload_module()
 
 def run_cases(cases):
     for ver in versions:
-        core.restart_uft(ver=ver, logfile="host_run_" + ver + ".log")
+        print("one")
+        core.set_env(ver=ver, docker=False)
+        core.restart_uft()
         run_cases_host(cases, ver)
-
-        core.restart_uft(ver=ver, docker=True,
-                         logfile="docker_run_" + ver + ".log")
-        run_cases_docker(cases, ver)
+        try:
+            core.set_env(ver=ver , docker=True)
+            core.restart_uft()
+            run_cases_docker(cases, ver)
+        except Exception as e:
+            print("run docker case : ", e)
 
 
 if __name__ == "__main__":
     cfg = config.init_config()
-    versions = cfg.get("versions", ["v21.08", "v21.11", "v22.03"])
+    versions = cfg.get("versions", ["v21.08", "v21.11", "v22.03", "v22.07","v22.11"])
     allow_list = cfg.get("allow_list", [])
     if not isinstance(allow_list, list):
         allow_list = []
@@ -187,15 +202,18 @@ if __name__ == "__main__":
     versions.sort()
     cfg["versions"] = versions
     global_config = cfg
+    print("will test the versions : ", versions)
 
     atexit.register(handler_on_exit)
     core.init_dut(cfg)
-
+    print("init dut done")
     cases = load_cases()
     try:
         run_cases(cases)
     except Exception as e:
         print(e)
-
+        print(e.__traceback__.tb_frame.f_globals["__file__"])
+        print(e.__traceback__.tb_lineno)
+    print("all tests Done")
     core.stop_uft()
     generate_report(cases)

@@ -1,9 +1,9 @@
 import core
 
-disable_docker=True
+disable_docker = True
 priority=100
 
-def run():
+def run(ver):
 	core.restart_uft(use_cert=True)
 	resp = core.execute_rule("listports")
-	return len(core.ports_from_resp(resp)) == len(core.ports_configured())
+	return len(core.ports_from_resp(resp)) == len(core.ports_configured(ver))

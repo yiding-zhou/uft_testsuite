@@ -83,7 +83,7 @@ core: Basic support, include generating gRPC request for rules, build/start/stop
 #### Functions exported by core
 ```reset_uft(use_cert=False)```: Restart uft on the server with cert or not.<br>
 ```execute_rule(cmd)```: Generate gRPC request for cmd, return the response for it, cmd's format is the same as that used in testpmd <br>
-```ports_configured()```: Return all dcfs configured<br>
+```ports_configured(ver)```: Return all dcfs configured<br>
 ##### simple helper functions for gRPC response
 ```error_from_resp(resp)```: Get error from any response.<br>&ensp;&ensp;&ensp;&ensp;return none if no error<br>
 ```ruleno_from_resp(resp)```: Extract ruleno from response corresponding to "flow create xxxxx".<br>&ensp;&ensp;&ensp;&ensp;return -1 on error<br>

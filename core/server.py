@@ -21,6 +21,7 @@ def _build_uft_check(srv):
         "docker": {"cmd": "docker images|grep " + srv.image_prefix, "done": False},
         "qos": {"cmd": find_cmd + " -name qos_pb2.py", "done": False},
         "flow": {"cmd": find_cmd + " -name flow_pb2.py", "done": False},
+        "flow_version": {"cmd": find_cmd + " -name flow_version_pb2.py", "done": False},
         "cython": {"cmd": find_cmd + " -name *.so", "done": False}
     }
     done = True
@@ -30,7 +31,7 @@ def _build_uft_check(srv):
             if check_map[chk]["done"]:
                 continue
 
-            if len(srv._excute_cmd(check_map[chk]["cmd"])) != len(srv.versions):
+            if len(srv._excute_cmd(check_map[chk]["cmd"])) < len(srv.versions):
                 print("building %s ......" % chk)
                 done = False
             else:
@@ -60,7 +61,7 @@ class dut_context:
 
         self.versions = cfg.get("versions")
         self.remote_testdir = cfg.get("remote_testdir", "/root/uft_testdir")
-        self.current_version = -1
+        self.current_version = "unkown"
         self.docker = False
         self.image_prefix = cfg.get("image_prefix", "uft_test")
         self.pcis = cfg.get("pcis")
@@ -69,9 +70,7 @@ class dut_context:
         self.build_check_interval = 60
         self.cwd = os.path.dirname(os.path.abspath(__file__))
         dirs = self.cwd.split("/")
-        self.local_uft_dir = "/".join(dirs[:-2])
         self.local_uft_name = dirs[-3]
-        self.current_run_log = ""
 
     def _clean_uft(self, clean_files=False):
         print("=============== stop building docker images ===============")
@@ -82,6 +81,11 @@ class dut_context:
         docker_cmd = "(which docker > /dev/null 2>&1) && "
         docker_cmd += "(docker ps | grep " + self.image_prefix
         docker_cmd += "| awk '{print $1}'|xargs docker stop 2>/dev/null)"
+        self._excute_cmd(docker_cmd)
+        print("=============== remove stopped UFT in docker ===============")
+        docker_cmd = "(which docker > /dev/null 2>&1) && "
+        docker_cmd += "(docker ps -a | grep " + self.image_prefix + " | grep -i exited"
+        docker_cmd += "| awk '{print $1}'|xargs docker rm 2>/dev/null)"
         self._excute_cmd(docker_cmd)
 
         print("=============== stop running UFT in host ===============")
@@ -185,7 +189,11 @@ class dut_context:
 
     def _gen_uft_conf(self, ver, use_cert=False):
         global remote_dpdk_dir
-        print("=============== generate server_conf for %s===============" % ver)
+        title = "=============== generate server_conf for %s"  % ver
+        if use_cert:
+            title += " with cert "
+        title += "==============="
+        print(title)
         filename = self.cwd + "/" + conf_prefix + "." + ver
         conf = {"server": {}, "ports_info": []}
         libpath = "%s/libdpdk-%s/%s" % (self.remote_testdir,
@@ -202,9 +210,9 @@ class dut_context:
 
                 conf["server"]["server_port"] = self.grpc_port
                 conf["server"]["cert_key"] = s_key
-                conf["server"]["cert_certificate"] = s_crt 
+                conf["server"]["cert_certificate"] = s_crt
                 filename += conf_cert_postfix
-        
+
         f = open(filename, "w+")
         conf["ports_info"] = self.pcis
         yaml.dump(conf, f)
@@ -224,10 +232,10 @@ class dut_context:
 
         self.cert_ver = random.randint(0, len(self.versions) - 1)
         print("=============== upload UFT to DUT ===============")
-        
-        self._upload(self.local_uft_dir, self.remote_testdir)
-        self._excute_cmd("cd %s && mv %s %s 2>/dev/null" %
-                         (self.remote_testdir, self.local_uft_name, remote_uft_base))
+
+        self._upload("uft.tar", self.remote_testdir)
+        self._excute_cmd("cd %s && tar -xvf uft.tar && mv internal %s 2>/dev/null" %
+                         (self.remote_testdir, remote_uft_base))
         self._excute_cmd("cd " + self.remote_testdir +
                          " && chmod +x build.sh && ./build.sh > build.log 2>&1 &")
 
@@ -236,29 +244,24 @@ class dut_context:
         print("building in DUT ......")
         self.tid_check.join()
 
-    def _restart_uft(self, ver, use_cert, docker, logfile):
+    def _restart_uft(self, use_cert):
         global remote_dpdk_dir
-        if use_cert and docker:
+        if use_cert and self.docker:
             raise Exception("start uft with cert in docker is not supported")
 
-        if ver is None:
-            if self.current_version == -1:
-                self.current_version = 0
-            ver = self.versions[self.current_version]
+        logfile = "_run_%s.log" % self.current_version
+        if self.docker:
+            logfile = "docker" + logfile
+        else:
+            logfile = "host" + logfile
 
-        if ver not in self.versions:
-            return False
-
-        if logfile is None:
-            logfile = self.current_run_log
-        
-        self.current_run_log = logfile
-        
-        self._stop_uft()
         logfile = "%s/%s/%s" % (self.remote_testdir, remote_run_log, logfile)
+        self.current_run_log = logfile
+
+        self._stop_uft()
 
         cmd = ""
-        if docker:
+        if self.docker:
             cmd += "docker run -v /dev/hugepages:/dev/hugepages "
             cmd += "-v /lib/firmware:/lib/firmware:rw "
             for i, pci in enumerate(self.pcis):
@@ -267,18 +270,18 @@ class dut_context:
 
             cmd += "--net=host --cap-add IPC_LOCK --cap-add SYS_NICE "
 
-            cmd += "--device /dev/vfio:/dev/vfio " + self.image_prefix + ":" + ver
+            cmd += "--device /dev/vfio:/dev/vfio " + self.image_prefix + ":" + self.current_version
         else:
-            conf = self.remote_testdir + "/" + conf_prefix + "." + ver
+            conf = self.remote_testdir + "/" + conf_prefix + "." + self.current_version
             if use_cert:
                 conf += conf_cert_postfix
-            uft_dir = "%s/%s/%s" % (self.remote_testdir, remote_uft_dir, ver)
+            uft_dir = "%s/%s/%s" % (self.remote_testdir, remote_uft_dir, self.current_version)
             cmd = "cd " + uft_dir
             cmd += " && cp -f %s %s%s " % (conf, conf_prefix, conf_postfix)
             cmd += " && export LD_LIBRARY_PATH="
-            cmd += "%s/libdpdk-%s/%s" % (self.remote_testdir, ver, remote_dpdk_dir)
+            cmd += "%s/libdpdk-%s/%s" % (self.remote_testdir, self.current_version, remote_dpdk_dir)
             cmd += " && python3 -u %s/server.py " % uft_dir
-            
+
         cmd += " >> " + logfile + " 2>&1 &"
         print("=============== start UFT ==========================")
         self._excute_cmd(cmd)
@@ -295,16 +298,14 @@ class dut_context:
         if count == 0:
             print("start uft timeout ......")
             return False
-        
-        self.docker = docker
-        self.current_version = self.versions.index(ver)
-       
         return True
 
     def _stop_uft_docker(self):
         print("=============== stop UFT in docker ===============")
-        image = self.image_prefix + ":" + self.versions[self.current_version]
+        image = self.image_prefix + ":" + self.current_version
         cmd = '''docker ps | grep "%s" | awk '{print $1}' | xargs docker stop 2>/dev/null''' % image
+        self._excute_cmd(cmd)
+        cmd = '''docker ps -a| grep  -i exited | awk '{print $1}' | xargs docker rm 2>/dev/null'''
         self._excute_cmd(cmd)
 
         count = 5
@@ -321,7 +322,7 @@ class dut_context:
         return count != 0
 
     def _stop_uft_host(self):
-        print("=============== stop UFT in host ===============")
+        print("=============== stop UFT on host ===============")
         cmd = 'ps aux | grep python3 | grep "server.py" | grep "%s/%s"' % (
             self.remote_testdir, remote_uft_dir)
         self._excute_cmd(cmd + " | awk '{print $2}' | xargs kill 2>/dev/null")
@@ -334,7 +335,7 @@ class dut_context:
                 break
             count -= 1
         if count == 0:
-            print("stop uft in host timeout...")
+            print("stop uft on host timeout...")
         return count != 0
 
     def _stop_uft(self):
@@ -342,7 +343,7 @@ class dut_context:
             return self._stop_uft_docker()
         else:
             return self._stop_uft_host()
-
+    # ident n
     def _insert_log_tag(self, tag, n):
         if not n or not isinstance(n, int):
             n = 0
@@ -351,8 +352,7 @@ class dut_context:
             prefix = prefix + "===="
             n -= 1
 
-        cmd = 'echo "%s%s" >> %s/%s/%s' % (prefix, tag,
-                        self.remote_testdir, remote_run_log, self.current_run_log)
+        cmd = 'echo "%s%s" >> %s' % (prefix, tag, self.current_run_log)
         self._excute_cmd(cmd, echo=False)
 
 def init_dut(cfg):
@@ -364,14 +364,29 @@ def init_dut(cfg):
         dut._build_uft()
 
 
-def restart_uft(ver=None, use_cert=False, docker=False, logfile=None):
+def restart_uft(use_cert=False):
     if use_cert and not dut.grpc_auth:
         raise Exception("You must configure grpc[auth]")
     rule.reset_rule_context(dut.cfg, use_cert)
-    return dut._restart_uft(ver, use_cert, docker, logfile)
+    return dut._restart_uft(use_cert)
 
+## need to reimplement, sort the pcis according to BDF
+def ports_configured(ver):
+#    pcis = dut.pcis
+    #def takecompkey(elem):
+#    return elem['pci']
+#    pcis.sort(key = (lambda x : x["pci"]))
 
-def ports_configured():
+    if ver > 'v22.07':
+        idx = 0
+        for i, pci in enumerate(dut.pcis):
+            dut.pcis[i]["port_id"] = idx
+            idx += pci.get('vfs', 0)
+            idx += 1
+    else:
+        for i, pci in enumerate(dut.pcis):
+            dut.pcis[i]["port_id"] = i
+
     return dut.pcis
 
 
@@ -388,7 +403,11 @@ def execute_rule(r):
 def execute_command(cmd):
     dut._excute_cmd(cmd)
 
+def set_env(ver="unkown",docker=False):
+    dut.current_version = ver
+    dut.docker = docker
+
 dut = None
 
 __all__ = ["init_dut", "restart_uft", "ports_configured", "stop_uft", "insert_log_tag",
-"execute_rule", "execute_command"]
+"execute_rule", "execute_command","set_env"]

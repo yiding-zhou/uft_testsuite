@@ -2,9 +2,9 @@ import core
 
 need_restart = True
 
-def run():
+def run(ver):
     res = False
-    pcis = core.ports_configured()
+    pcis = core.ports_configured(ver)
     intf = pcis[0].get("intf")
     core.stop_uft()
     core.insert_log_tag("Step 1: set the vf trust off", 1)

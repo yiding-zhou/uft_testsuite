@@ -1,9 +1,9 @@
 import grpc
-
-from flow_pb2_grpc import FlowServiceStub
+from google.protobuf import reflection as _reflection
+from flow_pb2_grpc import *
 from flow_pb2 import *
-
-
+import importlib
+import flow_version_pb2
 '''
 class FlowCodeGenerator:
     def __init__(self):
@@ -37,10 +37,10 @@ class FlowCodeGenerator:
 
         for i,a in enumerate(actions):
             res += "action = rte_flow_action()\n"
-            action_func = action_func_map.get(a.action, None) 
+            action_func = action_func_map.get(a.action, None)
             if action_func is None:
                 raise Exception('Unsupport action %s' % a.action)
-            
+
             if a.action == 'queue':
                 print('a.prep = ',a.prep)
             action.type = action_func[0]
@@ -50,11 +50,11 @@ class FlowCodeGenerator:
                     setattr(action_struct, a.prep, parse_int(a.val))
                 action.conf.Pack(action_struct)
             req.action.append(action)
-            
+
         action_end = rte_flow_action()
         action_end.type = RTE_FLOW_ACTION_TYPE_END
         req.action.append(action_end)
-        
+
         return getattr(self.flow_stub, cmd)(req)
 
     def list_codegen(self, port_id):
@@ -87,7 +87,7 @@ def flow_pattern_codegen(pattern):
         res += "mask = %s()\r\n" % helper[1].__class__.__name__
         res += "spec = %s()\r\n" % helper[1].__class__.__name__
         res += "last = %s()\r\n" % helper[1].__class__.__name__
-    
+
         normal_fields,range_fields = flow_handle_fields(pattern)
         for fname,(fprep,fval)  in normal_fields.items():
             detail = helper[2][fname]
@@ -99,22 +99,22 @@ def flow_pattern_codegen(pattern):
             res += "mask%s = %d\r\n" % val
             if val != detail[2] and fprep == 'is':
                 res += "spec%s = %d\r\n" % detail[3]
-    
+
         for k,v in range_fields.items():
             for kk,vv in v.items():
-    
+
                 detail = helper[2][kk]
                 detail_str = ''
                 for d in detail[0][:-1]:
                     detail_str += ".%s" % d
-                
+
                 val = detail[1](vv)
                 res += k + detail_str + " = %d\r\n" % val
-    
+
         if normal_fields:
             res += "item.spec.Pack(mask)\r\n"
             res += "item.mask.Pack(spec)\r\n"
-    
+
         if 'last' in range_fields:
             res += "item.spec.Pack(last)\r\n"
 
@@ -170,8 +170,13 @@ class FlowBuilder(object):
             action.type = action_func[0]
             if action_func[1] is not None:
                 action_struct = action_func[1]()
+                action_field_map = action_func[2]
                 if a.prep:
-                    setattr(action_struct, a.prep, parse_int(a.val))
+                    if action_field_map:
+                        setattr(action_struct, action_field_map[a.prep], parse_int(a.val))
+                    else:
+                        setattr(action_struct, a.prep, parse_int(a.val))
+
                 action.conf.Pack(action_struct)
             req.action.append(action)
 
@@ -282,14 +287,13 @@ def parse_ipv6(s):
 def parse_mac(s):
     return bytes(bytearray.fromhex(s.replace(':', '')))
 
-
 action_func_map = {
-    'drop': (RTE_FLOW_ACTION_TYPE_DROP, None),
-    'vf': (RTE_FLOW_ACTION_TYPE_VF, rte_flow_action_vf),
-    'mark': (RTE_FLOW_ACTION_TYPE_MARK, rte_flow_action_mark),
-    'queue': (RTE_FLOW_ACTION_TYPE_QUEUE, rte_flow_action_queue),
+    'drop': (RTE_FLOW_ACTION_TYPE_DROP, None, None),
+    'mark': (RTE_FLOW_ACTION_TYPE_MARK, rte_flow_action_mark, None),
+    'queue': (RTE_FLOW_ACTION_TYPE_QUEUE, rte_flow_action_queue, None),
+#    'represented_port':(RTE_FLOW_ACTION_TYPE_REPRESENTED_PORT, rte_flow_action_ethdev, {"ethdev_port_id":"port_id"}),
+    'vf': (RTE_FLOW_ACTION_TYPE_VF, rte_flow_action_vf, None),
 }
-
 eth_field_map = {
     'src': (('src', 'addr_bytes'), parse_mac, b'\x00\x00\x00\x00\x00\x00', b'\xff\xff\xff\xff\xff\xff'),
     'dst': (('dst', 'addr_bytes'), parse_mac, b'\x00\x00\x00\x00\x00\x00', b'\xff\xff\xff\xff\xff\xff'),
@@ -334,14 +338,29 @@ pppoe_field_map = {
 }
 
 pattern_helper = {
-    'eth': (RTE_FLOW_ITEM_TYPE_ETH, rte_flow_item_eth, eth_field_map),
-    'ipv4': (RTE_FLOW_ITEM_TYPE_IPV4, rte_flow_item_ipv4, ipv4_field_map),
-    'ipv6': (RTE_FLOW_ITEM_TYPE_IPV6, rte_flow_item_ipv4, ipv6_field_map),
-    'tcp': (RTE_FLOW_ITEM_TYPE_TCP, rte_flow_item_tcp, tcp_field_map),
-    'udp': (RTE_FLOW_ITEM_TYPE_UDP, rte_flow_item_udp, udp_field_map),
-    'vlan': (RTE_FLOW_ITEM_TYPE_VLAN, rte_flow_item_vlan, vlan_field_map),
-    'pppoes': (RTE_FLOW_ITEM_TYPE_PPPOES, rte_flow_item_pppoe, pppoe_field_map),
-    'pppoe_proto_id': (RTE_FLOW_ITEM_TYPE_PPPOE_PROTO_ID, rte_flow_item_pppoe_proto_id, pppoe_proto_id_field_map),
+    'eth': (RTE_FLOW_ITEM_TYPE_ETH,
+             rte_flow_item_eth,
+             eth_field_map),
+    'ipv4': (RTE_FLOW_ITEM_TYPE_IPV4,
+            rte_flow_item_ipv4,
+            ipv4_field_map),
+    'ipv6': (RTE_FLOW_ITEM_TYPE_IPV6,
+            rte_flow_item_ipv4,
+            ipv6_field_map),
+    'tcp': (RTE_FLOW_ITEM_TYPE_TCP,
+            rte_flow_item_tcp,
+            tcp_field_map),
+    'udp': (RTE_FLOW_ITEM_TYPE_UDP,
+            rte_flow_item_udp,
+            udp_field_map),
+    'vlan': (RTE_FLOW_ITEM_TYPE_VLAN,
+            rte_flow_item_vlan,
+            vlan_field_map),
+    'pppoes': (RTE_FLOW_ITEM_TYPE_PPPOES,
+            rte_flow_item_pppoe, pppoe_field_map),
+    'pppoe_proto_id': (RTE_FLOW_ITEM_TYPE_PPPOE_PROTO_ID,
+            rte_flow_item_pppoe_proto_id,
+            pppoe_proto_id_field_map),
 }
 
 
@@ -409,3 +428,8 @@ def flow_pattern_item(pattern):
     if 'last' in range_fields:
         item.spec.Pack(subitems[2])
     return item
+
+#def flow_reload_module():
+#    importlib.reload(flow_version_pb2)
+
+#__all__ = ["flow_reload_module"]

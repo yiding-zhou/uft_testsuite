@@ -9,15 +9,16 @@ keywords = [
     'GTP_PSC','TOS','TTL','PROTO','ESP','SPI','AH',
     'SESSION_ID','L2TPV3OIP','QFI','SEID','PPPOE_PROTO_ID',
     'INT','MACADDR','IPADDR4','IPADDR6','TC',
-    'VF','ID','QUEUE','INDEX','DROP','MARK','ORIGINAL'
+    'VF','ID','QUEUE','INDEX','DROP','MARK','ORIGINAL',
+    'ETHDEV_PORT_ID', 'REPRESENTED_PORT'
     ]
 
 class Parser(object):
     def __init__(self):
         self.tokens = keywords
-        self.lexer = lex.lex(object=self,debug=False)            
+        self.lexer = lex.lex(object=self,debug=False)
         self.parser = yacc.yacc(module=self,debug=False)
-    
+
     def parse(self,s):
 #        print('ready to parse ',s)
         return self.parser.parse(s)
@@ -38,7 +39,7 @@ class Parser(object):
     t_VXLAN = r'vxlan'
     t_SCTP = r'sctp'
     t_NVGRE = 'nvgre'
-    
+
     t_PFCP = r'pfcp'
     t_GTPU = r'gtpu'
     t_PPPOES = r'pppoes'
@@ -52,7 +53,7 @@ class Parser(object):
     t_TCI = r'tci'
     t_S_FIELD = r's_field'
     t_TNI = r'tni'
-    
+
     t_VNI = r'vni'
     t_TEID = r'teid'
     t_GTP_PSC = r'gtp_psc'
@@ -75,6 +76,8 @@ class Parser(object):
     t_DROP = r'drop'
     t_MARK = r'mark'
     t_ORIGINAL = r'original'
+    t_ETHDEV_PORT_ID = r'ethdev_port_id'
+    t_REPRESENTED_PORT = r'represented_port'
 
     t_MACADDR = r'([0-9a-fA-F]{2}\:){5}[0-9a-fA-F]{2}'
     t_IPADDR4 = r'([0-9]{1,3}\.){3}[0-9]{1,3}'
@@ -96,7 +99,7 @@ class Parser(object):
                  |
         '''
         if len(p) == 3:
-            p[0] = p[2] + [p[1]] 
+            p[0] = p[2] + [p[1]]
         else:
             p[0] = []
 
@@ -120,7 +123,7 @@ class Parser(object):
         else:
             p[0] = patternAst(p[1],p[2])
 
-    def p_layer_fields(self,p): 
+    def p_layer_fields(self,p):
         '''layer_fields : layer_field layer_fields
                         |
         '''
@@ -134,18 +137,18 @@ class Parser(object):
 
     def p_layer_name(self,p):
         '''layer_name : ETH
-                    | VLAN 
-                    | VXLAN 
-                    | IPV4 
-                    | IPV6 
-                    | TCP 
-                    | UDP 
-                    | SCTP 
-                    | NVGRE 
-                    | GTPU 
-                    | PFCP 
-                    | GTP_PSC  
-                    | PPPOES 
+                    | VLAN
+                    | VXLAN
+                    | IPV4
+                    | IPV6
+                    | TCP
+                    | UDP
+                    | SCTP
+                    | NVGRE
+                    | GTPU
+                    | PFCP
+                    | GTP_PSC
+                    | PPPOES
                     | AH
                     | ESP
                     | L2TPV3OIP
@@ -158,7 +161,7 @@ class Parser(object):
                         | SRC SPEC value
                         | SRC MASK value
                         | DST SPEC value
-                        | DST MASK value 
+                        | DST MASK value
                         | TYPE IS INT
                         | SPI IS INT
                         | SESSION_ID IS INT
@@ -183,7 +186,7 @@ class Parser(object):
                 | IPADDR6
                 | INT
         '''
-        p[0] = p[1] 
+        p[0] = p[1]
 
     def p_action(self,p):
         '''action : VF ID INT
@@ -192,18 +195,21 @@ class Parser(object):
                 | MARK
                 | DROP
                 | MARK ID INT
+                | REPRESENTED_PORT ETHDEV_PORT_ID INT
         '''
         if len(p) == 4:
             p[0] = actionAst(p[1],p[2],p[3])
         else:
             p[0] = actionAst(p[1])
 
+# prep -- prepostion
 class fieldAst(object):
     def __init__(self,field,prep,val):
         assert(isinstance(field,str))
         self.field = field
         self.prep = prep
         self.val = val
+
     def __repr__(self):
         return '%s %s %s' % (self.field,self.prep,self.val)
 
@@ -233,6 +239,7 @@ class patternAst(object):
         for f in self.fields:
             s += ' ' + str(f)
         return s
+
     def __iter__(self):
         return iter(self.fields)
 

@@ -22,14 +22,14 @@ class rule_context:
             if rule[0:4] != "flow":
                 return None
 
-            cmd = FlowCommand(rule[4:]) 
+            cmd = FlowCommand(rule[4:])
             if not cmd.build():
                 return None
             method = cmd.command
         func = getattr(self.builder, method)
         if not func:
             return None
-            
+
         if method in ('create','validate'):
             patterns = [self.parser.parse(p) for p in cmd.patterns if p]
             actions  = [self.parser.parse(a) for a in cmd.actions if a]
@@ -37,10 +37,10 @@ class rule_context:
 
         elif method in ('flush','list'):
             resp = func(cmd.port_id)
-        
+
         elif method in ('destroy','query'):
             resp = func(cmd.port_id, cmd.flow_id)
-        
+
         elif method == 'listports':
             resp = func()
 

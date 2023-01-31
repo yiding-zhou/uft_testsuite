@@ -1,11 +1,10 @@
-import os
 import core
 
-disable_docker = True
+def run(ver):
+    cmd = "flow create 0 ingress pattern eth / ipv4 src is 192.168.0.20 dst is 192.168.0.21 / end actions vf id 1 / end"
+    if core.version_need_represented(ver):
+        cmd = "flow create 0 ingress pattern eth / ipv4 src is 192.168.0.20 dst is 192.168.0.21 / end actions  represented_port ethdev_port_id 1  / end"
 
-cmd = "flow create 0 ingress pattern eth / ipv4 src is 192.168.0.20 dst is 192.168.0.21 / end actions vf id 1 / end"
-
-def run():
     core.execute_rule("flow flush 0")
     step = 1
     core.insert_log_tag("Step 1: add a valid SWITCH rule", 1)

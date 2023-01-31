@@ -1,6 +1,6 @@
 import core
 
-def run():
+def run(ver):
     core.insert_log_tag("Step 1: start server with two ports", 1)
     core.restart_uft()
     core.insert_log_tag("Step 2: kill the server's process", 1)
@@ -10,7 +10,7 @@ def run():
     for _ in range(0, 1):
         if not core.restart_uft():
             return False
-        
+
     core.insert_log_tag("Step 4: start server with two ports", 1)
     core.restart_uft()
     core.insert_log_tag("Step 5: check the server can start correctly", 1)
